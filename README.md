@@ -25,7 +25,6 @@ own repo:
   pins.
 - Keeps the core `dynamo` repo lean.
 
-The long-term plan `vllm`, `trtllm`, and `sglang` can follow the same pattern.
 
 ## Repository layout
 
