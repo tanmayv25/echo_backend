@@ -179,7 +179,7 @@ every PR:
 1. **pre-commit** — isort, black, flake8, ruff, codespell, and the
    standard hygiene hooks (mirrors the configuration in
    [`ai-dynamo/dynamo`](https://github.com/ai-dynamo/dynamo/blob/main/.pre-commit-config.yaml)).
-2. **unit-tests** — `pytest` on Python 3.10 / 3.11 / 3.12.
+2. **unit-tests** — `pytest` on Python 3.11 / 3.12.
 
 The tests in `tests/test_engine.py` exercise `from_args`, `start`,
 `generate` (echo correctness, streaming cadence, cancellation,

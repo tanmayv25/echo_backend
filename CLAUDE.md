@@ -68,4 +68,4 @@ Logic shared across backends belongs in `dynamo.common` upstream, not in this re
   ```
 - Sign off commits (`git commit -s`) — DCO, matching `ai-dynamo/dynamo`.
 - Linter / formatter config in `pyproject.toml` intentionally mirrors `ai-dynamo/dynamo`; keep it aligned when upstream changes.
-- Supported Python: 3.10 / 3.11 / 3.12 (CI matrix).
+- Supported Python: 3.11 / 3.12 (CI matrix). 3.10 support will return once `ai-dynamo` stops importing `typing.Required` unguarded.
