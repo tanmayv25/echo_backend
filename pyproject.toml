@@ -1,0 +1,114 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "echo-backend"
+version = "0.1.0"
+description = "Illustrative Dynamo backend that echoes input tokens -- reference for backend developers."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "NVIDIA Corporation" },
+]
+keywords = ["dynamo", "inference", "backend", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "ai-dynamo>=1.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit>=3.7.0",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+echo-backend = "echo_backend.main:main"
+
+[project.urls]
+Repository = "https://github.com/tanmayv25/echo_backend"
+"Dynamo" = "https://github.com/ai-dynamo/dynamo"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/echo_backend"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/echo_backend",
+    "tests",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
+# --- Linters / formatters ------------------------------------------------
+# These mirror ai-dynamo/dynamo so contributions across the two repos stay
+# visually consistent.
+
+[tool.isort]
+profile = "black"
+line_length = 88
+known_first_party = ["echo_backend"]
+known_third_party = ["dynamo"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 88
+indent-width = 4
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B"]
+ignore = ["E203", "E501"]
+
+[tool.codespell]
+# Avoid false positives on tokenizer-related domain words.
+ignore-words-list = "afterall,ser"
+skip = "*.lock,*.patch,.git"
+
+[tool.mypy]
+python_version = "3.10"
+mypy_path = "src"
+explicit_package_bases = true
+check_untyped_defs = true
+# ai-dynamo cannot be imported in the pre-commit mypy hook's isolated
+# venv, so its types are inferred as Any. Our internal typing is still
+# checked.
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+check_untyped_defs = false
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+    "-ra",
+    "--showlocals",
+    "--strict-markers",
+    "--strict-config",
+]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "unit: unit tests that do not require a running Dynamo runtime",
+    "integration: tests that spin up a Worker and exercise the runtime",
+]

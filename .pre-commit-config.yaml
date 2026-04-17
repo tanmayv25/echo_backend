@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Hooks mirror https://github.com/ai-dynamo/dynamo/blob/main/.pre-commit-config.yaml
+# so a contributor working across both repositories sees consistent feedback.
+
+repos:
+- repo: https://github.com/timothycrosley/isort
+  rev: 5.12.0
+  hooks:
+  - id: isort
+    additional_dependencies: [toml]
+
+- repo: https://github.com/psf/black
+  rev: 24.10.0
+  hooks:
+  - id: black
+    types_or: [python]
+
+- repo: https://github.com/PyCQA/flake8
+  rev: 7.3.0
+  hooks:
+  - id: flake8
+    # Use block style -- YAML flow style splits every comma, so
+    # `--select=C,E,F,W,B,B950` would get parsed as six arguments.
+    # W503 ignored because black breaks before binary operators.
+    args:
+      - --max-line-length=88
+      - --select=C,E,F,W,B,B950
+      - --extend-ignore=E203,E501,W503
+    types_or: [python]
+
+- repo: https://github.com/codespell-project/codespell
+  rev: v2.2.4
+  hooks:
+  - id: codespell
+    additional_dependencies: [tomli]
+
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.5.2
+  hooks:
+  - id: ruff
+    args: [--fix, --exit-non-zero-on-fix]
+
+- repo: https://github.com/pre-commit/mirrors-mypy
+  rev: v1.14.1
+  hooks:
+  - id: mypy
+    args: [--config-file=pyproject.toml]
+    # Scope mypy to the package itself. Tests and scripts live outside
+    # the shipped package and pull in `dynamo.*` which we cannot import
+    # at pre-commit time (no ai-dynamo in the hook venv).
+    files: ^src/echo_backend/
+    additional_dependencies: []
+
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.4.0
+  hooks:
+  - id: check-case-conflict
+  - id: check-executables-have-shebangs
+  - id: check-merge-conflict
+  - id: check-json
+  - id: check-toml
+  - id: check-yaml
+    args: ['--allow-multiple-documents']
+  - id: check-shebang-scripts-are-executable
+  - id: end-of-file-fixer
+    types_or: [python]
+  - id: mixed-line-ending
+  - id: trailing-whitespace

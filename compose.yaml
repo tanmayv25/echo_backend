@@ -1,0 +1,96 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Local dev stack: etcd + NATS (JetStream) + Dynamo frontend + echo worker.
+#
+#   docker compose up --build                           # source build (dynamo main, default)
+#   DYNAMO_REF=1.1.0 docker compose up --build          # PyPI pinned (fast, once 1.1.0 ships)
+#   DYNAMO_REF= docker compose up --build               # PyPI transitive (from pyproject)
+#   docker compose down                                 # tear down (ephemeral state)
+#
+# Once up, hit the frontend on localhost:8000:
+#
+#   curl -s localhost:8000/v1/chat/completions \
+#       -H 'Content-Type: application/json' \
+#       -d '{"model": "echo-model",
+#            "messages": [{"role": "user", "content": "hello"}],
+#            "max_tokens": 32}'
+
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.15
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd0
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://etcd:2380
+      - --initial-cluster=etcd0=http://etcd:2380
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  nats:
+    image: nats:2.10-alpine
+    # -js: JetStream (required by Dynamo's event plane).
+    # -m 8222: HTTP monitoring endpoint used by the healthcheck.
+    command: ["-js", "-m", "8222"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  echo-backend:
+    image: echo-backend:dev
+    build:
+      context: .
+      dockerfile: container/Dockerfile
+      args:
+        DYNAMO_REF: ${DYNAMO_REF-main}
+    depends_on:
+      etcd: { condition: service_healthy }
+      nats: { condition: service_healthy }
+    environment:
+      ETCD_ENDPOINTS: http://etcd:2379
+      NATS_SERVER: nats://nats:4222
+    # Best-effort liveness probe: confirms the venv + ai-dynamo import
+    # succeeds. It doesn't verify model registration in etcd, but it's
+    # enough to gate the frontend's start so `docker compose up` users
+    # don't curl into a worker that's still importing.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import dynamo, echo_backend"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    # We borrow Qwen's tokenizer so Dynamo's register_model() has a real
+    # HF repo (with a chat_template) to fetch. `--served-model-name` keeps
+    # `echo-model` visible to the frontend. Drop this shim once EngineConfig
+    # can supply a local tokenizer path.
+    command:
+      - --model-name=Qwen/Qwen3-0.6B
+      - --served-model-name=echo-model
+      - --namespace=dynamo
+      - --repeat-count=3
+      - --delay-seconds=0.02
+
+  frontend:
+    image: echo-backend:dev
+    depends_on:
+      etcd: { condition: service_healthy }
+      nats: { condition: service_healthy }
+      echo-backend: { condition: service_healthy }
+    environment:
+      ETCD_ENDPOINTS: http://etcd:2379
+      NATS_SERVER: nats://nats:4222
+    # Override the image's `echo-backend` entrypoint -- we want the HTTP
+    # frontend from the same ai-dynamo install.
+    entrypoint: ["python", "-m", "dynamo.frontend"]
+    command: ["--http-port", "8000"]
+    ports:
+      - "8000:8000"
