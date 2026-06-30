@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All 
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# echo_backend [Experimental]
+# Echo Backend [Experimental]
 
 An illustrative [Dynamo](https://github.com/ai-dynamo/dynamo) backend
 that echoes the request tokens back to the caller. It exists to show
@@ -24,8 +24,6 @@ own repo:
 - Lets each backend pick its own container base image and dependency
   pins.
 - Keeps the core `dynamo` repo lean.
-
-The long-term plan is for `vllm`, `trtllm`, and `sglang` to follow the same pattern.
 
 ## Repository layout
 
