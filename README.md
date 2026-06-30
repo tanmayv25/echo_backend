@@ -13,17 +13,6 @@ inference engine into Dynamo using the
 module, and to give each backend a home for its own CI and container
 image instead of bundling everything into the main `dynamo` repo.
 
-## Why a separate repo?
-
-Writing a backend against `dynamo.common.backend` is the easy part --
-the friction is everywhere *around* it: GitHub Actions wiring,
-Dockerfile templates, release pipelines. Keeping each backend in its
-own repo:
-
-- Isolates per-engine CI (no need to pull in every framework's tests).
-- Lets each backend pick its own container base image and dependency
-  pins.
-- Keeps the core `dynamo` repo lean.
 
 ## Repository layout
 
