@@ -29,7 +29,11 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "ai-dynamo>=1.1.0",
+    # The unified backend API used here (EngineConfig.llm / LlmRegistration,
+    # start(worker_id), the required GenerateChunk["index"] field) is current
+    # as of ai-dynamo 1.3.x. Older releases predate this contract and won't
+    # import. To track upstream `main` instead, see the note in README.md.
+    "ai-dynamo>=1.3.0",
 ]
 
 [project.optional-dependencies]
