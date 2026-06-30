@@ -5,7 +5,7 @@
 #
 #   docker build -t echo-backend:dev -f container/Dockerfile .
 #   docker build --build-arg DYNAMO_REF=main  -t echo-backend:dev -f container/Dockerfile .
-#   docker build --build-arg DYNAMO_REF=1.1.0 -t echo-backend:dev -f container/Dockerfile .
+#   docker build --build-arg DYNAMO_REF=1.3.0 -t echo-backend:dev -f container/Dockerfile .
 #
 # DYNAMO_REF selects how ai-dynamo is installed:
 #   empty / unset             -> PyPI transitive (resolve from pyproject.toml). Fast.

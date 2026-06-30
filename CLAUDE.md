@@ -13,13 +13,13 @@ pre-commit install
 pytest -v
 
 # Run a single test
-pytest tests/test_engine.py::test_generate_echoes_tokens_repeat_count_times -v
+pytest tests/test_engine.py::test_generate_echoes_prompt_repeat_count_times -v
 
 # Run only unit or integration tests
 pytest -m unit
 pytest -m integration
 
-# Lint (all hooks mirror ai-dynamo/dynamo: isort, black, flake8, ruff, codespell)
+# Lint (all hooks mirror ai-dynamo/dynamo: isort, black, flake8, ruff, codespell, mypy)
 pre-commit run --all-files
 
 # Run the backend locally (requires etcd + nats — see Dynamo quickstart)
@@ -28,7 +28,7 @@ python -m echo_backend --model-name echo-model --namespace dynamo \
 
 # Or run the whole stack (etcd + NATS + Dynamo frontend + worker) in containers:
 docker compose up --build                         # dynamo main, built from source
-DYNAMO_REF=1.1.0 docker compose up --build        # PyPI pinned (fast, no Rust)
+DYNAMO_REF=1.3.0 docker compose up --build        # PyPI pinned (fast, no Rust)
 DYNAMO_REF= docker compose up --build             # PyPI transitive via pyproject
 ```
 
@@ -43,17 +43,19 @@ This repo is an illustrative reference backend, not a production engine. The ent
 The contract is a single class, `EchoLLMEngine` (`src/echo_backend/engine.py`), subclassing `dynamo.common.backend.LLMEngine`. It implements exactly four methods:
 
 - `from_args(argv)` — parse CLI args, return `(engine, WorkerConfig)`.
-- `start()` — return an `EngineConfig` with registration metadata (model name, context length, KV block sizing).
-- `generate(request, context)` — async generator yielding `GenerateChunk` dicts. The final chunk must carry `finish_reason` and `completion_usage`. Check `context.is_stopped()` inside the loop to honour cancellation; emit `finish_reason="cancelled"` on early termination. `finish_reason` normalisation (e.g. `"abort"` → `"cancelled"`) is handled downstream in the Rust layer, so emit whatever matches your engine's native reason.
+- `start(worker_id)` — return an `EngineConfig` with registration metadata. Neutral fields (`model`, `served_model_name`) sit on `EngineConfig`; token-pipeline metadata (context length, KV block sizing, DP layout, disagg bootstrap) goes in the optional `llm=LlmRegistration(...)` sub-record. `worker_id` is a runtime-allocated, cluster-unique id; ignore it unless the engine needs a per-worker key.
+- `generate(request, context)` — async generator yielding `GenerateChunk` dicts. Every chunk must carry `token_ids` and `index` (0 for single-choice); the final chunk must additionally carry `finish_reason` (and optionally `completion_usage`). Check `context.is_stopped()` inside the loop to honour cancellation; emit `finish_reason="cancelled"` on early termination. `finish_reason` normalisation (e.g. `"abort"` → `"cancelled"`) is handled downstream in the Rust layer, so emit whatever matches your engine's native reason.
 - `cleanup()` — release resources.
 
-`abort(context)` is optional; override only when the engine needs to release scheduler slots / KV blocks on cancellation.
+`abort(context)` is optional; override only when the engine needs to release scheduler slots / KV blocks on cancellation. `BaseEngine` (the modality-agnostic parent of `LLMEngine`) exposes more optional hooks — `health_check_payload()`, `kv_event_sources()`, `register_prometheus()`, `is_quiescent()`, etc. — all defaulting to no-ops. The echo engine leaves them alone; `dynamo.common.backend.sample_engine.SampleLLMEngine` upstream is the richer reference that opts into KV events, metrics, logprobs, and disaggregation.
 
-The entry point (`src/echo_backend/main.py`) is three lines: it hands the engine class to `dynamo.common.backend.run.run()`, which owns worker registration and the distributed runtime. Backend authors should not re-implement any of that glue here.
+The entry point (`src/echo_backend/main.py`) is a thin wrapper: it hands the engine class to `dynamo.common.backend.run.run()`, which owns worker registration and the distributed runtime. Backend authors should not re-implement any of that glue here.
 
 ### Testing approach
 
-`tests/test_engine.py` exercises the engine **without** spinning up a `Worker` or the distributed runtime. The Dynamo `Context` is replaced with `_StubContext` so cancellation is deterministic. When adding integration tests that actually boot a `Worker`, mark them with `@pytest.mark.integration` so CI gating works.
+`tests/test_engine.py` exercises the engine **without** spinning up a `Worker` or the distributed runtime. The Dynamo `Context` is replaced with `_StubContext` so cancellation is deterministic.
+
+`tests/test_integration.py` is the end-to-end counterpart: it's marked `@pytest.mark.integration` and sends a real HTTP request through the Dynamo frontend stood up by `compose.yaml`. It's **skipped unless `ECHO_BACKEND_E2E=1`** (so plain `pytest` and CI stay green with no runtime). Bring the stack up first (`docker compose up --build`), then `ECHO_BACKEND_E2E=1 pytest -m integration -v`. Use it as the template when adding integration tests that boot a `Worker`.
 
 ### Keeping the engine thin
 

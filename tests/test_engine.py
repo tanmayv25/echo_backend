@@ -81,14 +81,17 @@ def test_invalid_context_length_rejected():
 
 async def test_start_returns_engine_config():
     # `served_model_name` flows from __init__ into EngineConfig so registration
-    # metadata and the worker's advertised name stay in sync.
+    # metadata and the worker's advertised name stay in sync. Token-pipeline
+    # metadata (context length, KV sizing) lives in the `llm` sub-record.
     engine = EchoLLMEngine(
         model_name="internal", served_model_name="public", context_length=1024
     )
-    cfg = await engine.start()
+    # start() receives a runtime-allocated worker_id; the echo engine ignores it.
+    cfg = await engine.start(worker_id=0)
     assert cfg.model == "internal"
     assert cfg.served_model_name == "public"
-    assert cfg.context_length == 1024
+    assert cfg.llm is not None
+    assert cfg.llm.context_length == 1024
 
 
 # --- generate ------------------------------------------------------------
@@ -100,6 +103,8 @@ async def test_generate_echoes_prompt_repeat_count_times():
 
     emitted = [tok for chunk in chunks for tok in chunk["token_ids"]]
     assert emitted == [10, 20, 30] * 3
+    # Every chunk carries index=0 (single-choice responses).
+    assert all(chunk["index"] == 0 for chunk in chunks)
     assert chunks[-1]["finish_reason"] == "stop"
     assert chunks[-1]["completion_usage"]["completion_tokens"] == 9
 
@@ -166,6 +171,7 @@ async def test_generate_all_stop_tokens_yields_terminal_chunk():
 
     assert len(chunks) == 1
     assert chunks[0]["token_ids"] == []
+    assert chunks[0]["index"] == 0
     assert chunks[0]["finish_reason"] == "stop"
     assert chunks[0]["completion_usage"]["prompt_tokens"] == 3
     assert chunks[0]["completion_usage"]["completion_tokens"] == 0
@@ -178,6 +184,7 @@ async def test_generate_empty_prompt_yields_terminal_chunk():
     assert len(chunks) == 1
     assert chunks[0] == {
         "token_ids": [],
+        "index": 0,
         "finish_reason": "stop",
         "completion_usage": {
             "prompt_tokens": 0,

@@ -29,6 +29,7 @@ from dynamo.common.backend import (
     GenerateChunk,
     GenerateRequest,
     LLMEngine,
+    LlmRegistration,
     WorkerConfig,
 )
 
@@ -143,8 +144,8 @@ class EchoLLMEngine(LLMEngine):
         )
         parser.add_argument(
             "--event-plane",
-            default="nats",
-            help="Transport for Dynamo runtime events.",
+            default=None,
+            help="Transport for Dynamo runtime events (None auto-detects NATS).",
         )
         args = parser.parse_args(argv)
 
@@ -169,23 +170,32 @@ class EchoLLMEngine(LLMEngine):
         )
         return engine, worker_config
 
-    async def start(self) -> EngineConfig:
+    async def start(self, worker_id: int) -> EngineConfig:
+        # `worker_id` is a runtime-allocated, cluster-unique identifier that is
+        # stable for this worker's lifetime. Real engines that need a per-worker
+        # key for cluster-wide bookkeeping (e.g. a disagg machine id) derive it
+        # from this value; the echo engine has no such need, so it's unused.
+        del worker_id
         logger.info(
             "Echo engine starting: model=%s repeat_count=%d delay=%.3fs",
             self.model_name,
             self.repeat_count,
             self.delay_seconds,
         )
-        # KV / batching values below are placeholders. A real engine derives
+        # Neutral fields (model / served_model_name) apply to every modality;
+        # token-pipeline metadata lives in the optional `llm` sub-record. The
+        # KV / batching values below are placeholders -- a real engine derives
         # them from GPU memory, model config, and scheduler policy.
         return EngineConfig(
             model=self.model_name,
             served_model_name=self.served_model_name,
-            context_length=self.context_length,
-            kv_cache_block_size=16,
-            total_kv_blocks=1024,
-            max_num_seqs=64,
-            max_num_batched_tokens=self.context_length,
+            llm=LlmRegistration(
+                context_length=self.context_length,
+                kv_cache_block_size=16,
+                total_kv_blocks=1024,
+                max_num_seqs=64,
+                max_num_batched_tokens=self.context_length,
+            ),
         )
 
     async def generate(
@@ -194,6 +204,10 @@ class EchoLLMEngine(LLMEngine):
         prompt_tokens = list(request.get("token_ids", []))
         prompt_len = len(prompt_tokens)
 
+        # The echo engine only reads `stop_conditions`. A real backend would
+        # also consume `request["sampling_options"]` (temperature, top_p, seed,
+        # ...) and `request["output_options"]` (logprobs, ...) here and pass
+        # them into its sampler; both are optional pass-through dicts.
         stop_conditions = request.get("stop_conditions") or {}
         requested_max = stop_conditions.get("max_tokens")
         # Strip stop tokens (e.g. Qwen's `<|im_end|>`) from the echo source
@@ -206,6 +220,12 @@ class EchoLLMEngine(LLMEngine):
         )
         echo_source = [t for t in prompt_tokens if t not in stop_token_ids]
 
+        # >>> This is the line a real backend replaces. Instead of repeating
+        # the prompt, call into your inference runtime (vLLM, TRT-LLM, SGLang,
+        # ...) and stream its generated token ids through the loop below.
+        # Everything else in this method -- chunk shape (`token_ids` + `index`),
+        # `finish_reason`, `completion_usage`, and the `context.is_stopped()`
+        # cancellation check -- is engine-agnostic and stays the same.
         echoed = echo_source * self.repeat_count
         total_available = len(echoed)
         if requested_max is not None and requested_max >= 0:
@@ -220,9 +240,12 @@ class EchoLLMEngine(LLMEngine):
                 "total_tokens": prompt_len + completion_tokens,
             }
 
+        # Every chunk must carry `index` (0 for single-choice responses); the
+        # final chunk must additionally carry `finish_reason`.
         if max_new == 0:
             yield {
                 "token_ids": [],
+                "index": 0,
                 "finish_reason": "stop",
                 "completion_usage": _usage(0),
             }
@@ -234,6 +257,7 @@ class EchoLLMEngine(LLMEngine):
             if context.is_stopped():
                 yield {
                     "token_ids": [],
+                    "index": 0,
                     "finish_reason": "cancelled",
                     "completion_usage": _usage(i),
                 }
@@ -242,7 +266,7 @@ class EchoLLMEngine(LLMEngine):
             if self.delay_seconds > 0:
                 await asyncio.sleep(self.delay_seconds)
 
-            chunk: GenerateChunk = {"token_ids": [echoed[i]]}
+            chunk: GenerateChunk = {"token_ids": [echoed[i]], "index": 0}
             if i == max_new - 1:
                 chunk["finish_reason"] = finish_reason
                 chunk["completion_usage"] = _usage(max_new)

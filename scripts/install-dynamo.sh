@@ -7,7 +7,7 @@
 # classification rules stay in one place.
 #
 #   scripts/install-dynamo.sh                # empty ref: no-op (PyPI via pyproject)
-#   scripts/install-dynamo.sh 1.1.0          # PyPI pinned release
+#   scripts/install-dynamo.sh 1.3.0          # PyPI pinned release
 #   scripts/install-dynamo.sh main           # git source build (rustup + runtime compile)
 #   scripts/install-dynamo.sh <branch|sha>   # git source build
 #
